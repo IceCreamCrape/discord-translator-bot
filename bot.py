@@ -4,6 +4,9 @@ import requests
 import os
 import time
 from dotenv import load_dotenv
+import threading
+from http.server import SimpleHTTPRequestHandler
+from socketserver import TCPServer
 
 load_dotenv()
 
@@ -47,6 +50,10 @@ def translate(text, source_lang, target_lang):
     else:
         print(f"❌ 번역 실패: {response.status_code} - {response.text}")
         return "[번역 실패]"
+
+def run_http_server():
+    with TCPServer(("", 8080), SimpleHTTPRequestHandler) as httpd:
+        httpd.serve_forever()
 
 @bot.event
 async def on_ready():
@@ -98,4 +105,6 @@ async def on_message(message):
             target_channel = bot.get_channel(cid)
             await target_channel.send(f"[{message.author.display_name}] : {translated}")
 
+# HTTP 서버를 별도의 스레드에서 실행
+threading.Thread(target=run_http_server, daemon=True).start()
 bot.run(TOKEN)
