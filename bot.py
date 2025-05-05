@@ -79,6 +79,7 @@ def translate(text, source_lang, target_lang):
 @bot.event
 async def on_ready():
     load_lang_config()
+    await bot.tree.sync()  # Slash command sync
     print(f"✅ 로그인됨: {bot.user}")
 
     health_channel_id = load_health_channel()
@@ -92,33 +93,49 @@ async def on_ready():
 async def 지정(interaction: discord.Interaction, 언어코드: str):
     lang_channels[interaction.channel.id] = 언어코드
     save_lang_config()
-    await interaction.response.send_message(f"✅ 이 채널이 `{언어코드}` 언어로 등록되었습니다.", ephemeral=True)
+    if interaction.response.is_done():
+        await interaction.followup.send(f"✅ 이 채널이 `{언어코드}` 언어로 등록되었습니다.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"✅ 이 채널이 `{언어코드}` 언어로 등록되었습니다.", ephemeral=True)
 
 @bot.tree.command(name="해제", description="현재 채널의 언어 번역 설정을 해제합니다.")
 async def 해제(interaction: discord.Interaction):
     if interaction.channel.id in lang_channels:
         del lang_channels[interaction.channel.id]
         save_lang_config()
-        await interaction.response.send_message("🗑️ 이 채널의 번역 설정이 해제되었습니다.", ephemeral=True)
+        msg = "🗑️ 이 채널의 번역 설정이 해제되었습니다."
     else:
-        await interaction.response.send_message("⚠️ 이 채널은 번역 설정이 없습니다.", ephemeral=True)
+        msg = "⚠️ 이 채널은 번역 설정이 없습니다."
+
+    if interaction.response.is_done():
+        await interaction.followup.send(msg, ephemeral=True)
+    else:
+        await interaction.response.send_message(msg, ephemeral=True)
 
 @bot.tree.command(name="설정확인", description="현재 설정된 번역 채널 목록을 확인합니다.")
 async def 설정확인(interaction: discord.Interaction):
     if not lang_channels:
-        await interaction.response.send_message("⚠️ 등록된 채널이 없습니다.", ephemeral=True)
-        return
+        msg = "⚠️ 등록된 채널이 없습니다."
+    else:
+        msg = "📌 등록된 언어 채널 목록:\n"
+        for cid, lang in lang_channels.items():
+            ch = bot.get_channel(cid)
+            msg += f"- {ch.name if ch else 'Unknown'} ({lang})\n"
 
-    msg = "📌 등록된 언어 채널 목록:\n"
-    for cid, lang in lang_channels.items():
-        ch = bot.get_channel(cid)
-        msg += f"- {ch.name if ch else 'Unknown'} ({lang})\n"
-    await interaction.response.send_message(msg, ephemeral=True)
+    if interaction.response.is_done():
+        await interaction.followup.send(msg, ephemeral=True)
+    else:
+        await interaction.response.send_message(msg, ephemeral=True)
 
 @bot.tree.command(name="헬스체크지정", description="이 채널을 헬스체크 알림 채널로 지정합니다.")
 async def 헬스체크지정(interaction: discord.Interaction):
     save_health_channel(interaction.channel.id)
-    await interaction.response.send_message("✅ 이 채널이 헬스체크 알림 채널로 설정되었습니다.", ephemeral=True)
+    msg = "✅ 이 채널이 헬스체크 알림 채널로 설정되었습니다."
+
+    if interaction.response.is_done():
+        await interaction.followup.send(msg, ephemeral=True)
+    else:
+        await interaction.response.send_message(msg, ephemeral=True)
 
 @bot.event
 async def on_message(message):
