@@ -25,7 +25,6 @@ DAILY_CHAR_LIMIT = 100000
 usage_today = 0
 usage_date = time.strftime("%Y-%m-%d")
 
-
 def load_lang_channels_from_env():
     mapping = {
         "TRANSLATION_CHANNEL_KO": "ko",
@@ -37,7 +36,6 @@ def load_lang_channels_from_env():
         channel_id = os.getenv(env_key)
         if channel_id and channel_id.isdigit():
             lang_channels[int(channel_id)] = lang_code
-
 
 def translate(text, source_lang, target_lang):
     global usage_today, usage_date
@@ -67,9 +65,8 @@ def translate(text, source_lang, target_lang):
             print(f"❌ 번역 실패: {response.status_code} - {response.text}")
             return "[번역 실패]"
     except Exception as e:
-        print(f"❌ 번역 요청 중 예외 발생: {e}")
+        print(f"❌ 번역 요청 예외: {e}")
         return "[번역 실패]"
-
 
 @bot.event
 async def on_ready():
@@ -84,23 +81,17 @@ async def on_ready():
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             await ch.send(f"✅ 번역봇이 다시 시작되었습니다.\n시각: {now}")
 
-
 @bot.event
 async def on_disconnect():
-    print("⚠️ 디스코드 게이트웨이 연결 끊김 (on_disconnect)")
-
-
-@bot.event
-async def on_resumed():
-    print("🔄 게이트웨이 연결 복구됨 (on_resumed)")
-
+    print("⚠️ 디스코드 게이트웨이 연결 끊김 - 봇 강제 재시작")
+    import os
+    os._exit(1)  # Render가 비정상 종료로 인식하고 자동 재시작
 
 @bot.event
 async def on_error(event, *args, **kwargs):
     print(f"❌ 에러 발생 - 이벤트: {event}")
     import traceback
     traceback.print_exc()
-
 
 @bot.event
 async def on_message(message):
@@ -119,11 +110,9 @@ async def on_message(message):
             target_channel = bot.get_channel(cid)
             await target_channel.send(f"[{message.author.display_name}] : {translated}")
 
-
 def run_http_server():
     with TCPServer(("", 8080), SimpleHTTPRequestHandler) as httpd:
         httpd.serve_forever()
-
 
 threading.Thread(target=run_http_server, daemon=True).start()
 bot.run(TOKEN)
