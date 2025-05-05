@@ -16,6 +16,7 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_API_URL = "https://translation.googleapis.com/language/translate/v2"
+DEPLOY_HOOK = os.getenv("RENDER_DEPLOY_HOOK_URL")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -86,7 +87,20 @@ async def health_ping():
             await channel.send(f"✅ 봇 정상 작동 중\n⏱️ {now}")
         except Exception as e:
             print(f"❌ health_ping 예외: {e}")
-        await asyncio.sleep(60)
+        await asyncio.sleep(300)
+
+def restart_via_hook():
+    if DEPLOY_HOOK:
+        try:
+            requests.post(DEPLOY_HOOK)
+            print("🔁 Deploy Hook 호출로 재시작 요청 완료")
+        except Exception as e:
+            print(f"❌ Deploy Hook 호출 실패: {e}")
+
+def auto_restart_via_hook():
+    while True:
+        time.sleep(900)  # 15분
+        restart_via_hook()
 
 @bot.event
 async def on_ready():
@@ -101,18 +115,6 @@ async def on_ready():
         if ch:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             await ch.send(f"✅ 번역봇이 다시 시작되었습니다.\n시각: {now}")
-
-@bot.event
-async def on_disconnect():
-    print("⚠️ 디스코드 게이트웨이 연결 끊김 - 봇 강제 재시작")
-    os._exit(1)
-
-@bot.event
-async def on_error(event, *args, **kwargs):
-    print(f"❌ 에러 발생 - 이벤트: {event}")
-    import traceback
-    traceback.print_exc()
-    os._exit(1)
 
 @bot.event
 async def on_message(message):
@@ -135,11 +137,12 @@ async def on_message(message):
         print(f"❌ on_message 예외: {e}")
         import traceback
         traceback.print_exc()
-        os._exit(1)
 
 def run_http_server():
     with TCPServer(("", 8080), SimpleHTTPRequestHandler) as httpd:
         httpd.serve_forever()
 
+# 시작
 threading.Thread(target=run_http_server, daemon=True).start()
+threading.Thread(target=auto_restart_via_hook, daemon=True).start()
 bot.run(TOKEN)
