@@ -19,14 +19,13 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='/', intents=intents)
 
-lang_channels = {}  # {channel_id: lang_code}
+lang_channels = {}
 
 DAILY_CHAR_LIMIT = 100000
 usage_today = 0
 usage_date = time.strftime("%Y-%m-%d")
 
 
-# 번역 채널 환경변수에서 불러오기
 def load_lang_channels_from_env():
     mapping = {
         "TRANSLATION_CHANNEL_KO": "ko",
@@ -40,7 +39,6 @@ def load_lang_channels_from_env():
             lang_channels[int(channel_id)] = lang_code
 
 
-# 번역 요청
 def translate(text, source_lang, target_lang):
     global usage_today, usage_date
     today = time.strftime("%Y-%m-%d")
@@ -60,16 +58,19 @@ def translate(text, source_lang, target_lang):
         'key': GOOGLE_API_KEY
     }
 
-    response = requests.post(GOOGLE_API_URL, data=params)
-    if response.status_code == 200:
-        usage_today += request_chars
-        return response.json()['data']['translations'][0]['translatedText']
-    else:
-        print(f"❌ 번역 실패: {response.status_code} - {response.text}")
+    try:
+        response = requests.post(GOOGLE_API_URL, data=params)
+        if response.status_code == 200:
+            usage_today += request_chars
+            return response.json()['data']['translations'][0]['translatedText']
+        else:
+            print(f"❌ 번역 실패: {response.status_code} - {response.text}")
+            return "[번역 실패]"
+    except Exception as e:
+        print(f"❌ 번역 요청 중 예외 발생: {e}")
         return "[번역 실패]"
 
 
-# 봇 실행 준비
 @bot.event
 async def on_ready():
     load_lang_channels_from_env()
@@ -84,7 +85,23 @@ async def on_ready():
             await ch.send(f"✅ 번역봇이 다시 시작되었습니다.\n시각: {now}")
 
 
-# 메시지 처리 및 언어간 번역
+@bot.event
+async def on_disconnect():
+    print("⚠️ 디스코드 게이트웨이 연결 끊김 (on_disconnect)")
+
+
+@bot.event
+async def on_resumed():
+    print("🔄 게이트웨이 연결 복구됨 (on_resumed)")
+
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    print(f"❌ 에러 발생 - 이벤트: {event}")
+    import traceback
+    traceback.print_exc()
+
+
 @bot.event
 async def on_message(message):
     await bot.process_commands(message)
@@ -103,7 +120,6 @@ async def on_message(message):
             await target_channel.send(f"[{message.author.display_name}] : {translated}")
 
 
-# Render 유지용 HTTP 서버 실행
 def run_http_server():
     with TCPServer(("", 8080), SimpleHTTPRequestHandler) as httpd:
         httpd.serve_forever()
