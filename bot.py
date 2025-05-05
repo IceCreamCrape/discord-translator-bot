@@ -1,3 +1,4 @@
+
 import discord
 from discord.ext import commands
 import requests
@@ -26,7 +27,6 @@ DAILY_CHAR_LIMIT = 100000
 usage_today = 0
 usage_date = time.strftime("%Y-%m-%d")
 
-
 def load_lang_channels_from_env():
     mapping = {
         "TRANSLATION_CHANNEL_KO": "ko",
@@ -38,7 +38,6 @@ def load_lang_channels_from_env():
         channel_id = os.getenv(env_key)
         if channel_id and channel_id.isdigit():
             lang_channels[int(channel_id)] = lang_code
-
 
 def translate(text, source_lang, target_lang):
     global usage_today, usage_date
@@ -71,7 +70,6 @@ def translate(text, source_lang, target_lang):
         print(f"❌ 번역 요청 예외: {e}")
         return "[번역 실패]"
 
-
 async def health_ping():
     await bot.wait_until_ready()
     channel_id = os.getenv("HEALTH_CHECK_CHANNEL_ID")
@@ -88,8 +86,7 @@ async def health_ping():
             await channel.send(f"✅ 봇 정상 작동 중\n⏱️ {now}")
         except Exception as e:
             print(f"❌ health_ping 예외: {e}")
-        await asyncio.sleep(300)  # 5분마다
-
+        await asyncio.sleep(60)
 
 @bot.event
 async def on_ready():
@@ -105,42 +102,44 @@ async def on_ready():
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             await ch.send(f"✅ 번역봇이 다시 시작되었습니다.\n시각: {now}")
 
-
 @bot.event
 async def on_disconnect():
     print("⚠️ 디스코드 게이트웨이 연결 끊김 - 봇 강제 재시작")
     os._exit(1)
-
 
 @bot.event
 async def on_error(event, *args, **kwargs):
     print(f"❌ 에러 발생 - 이벤트: {event}")
     import traceback
     traceback.print_exc()
-
+    os._exit(1)
 
 @bot.event
 async def on_message(message):
-    await bot.process_commands(message)
+    try:
+        await bot.process_commands(message)
 
-    if message.author.bot or message.channel.id not in lang_channels:
-        return
+        if message.author.bot or message.channel.id not in lang_channels:
+            return
 
-    src_lang = lang_channels[message.channel.id]
-    for cid, tgt_lang in lang_channels.items():
-        if cid == message.channel.id:
-            continue
+        src_lang = lang_channels[message.channel.id]
+        for cid, tgt_lang in lang_channels.items():
+            if cid == message.channel.id:
+                continue
 
-        translated = translate(message.content, src_lang, tgt_lang)
-        if translated:
-            target_channel = bot.get_channel(cid)
-            await target_channel.send(f"[{message.author.display_name}] : {translated}")
-
+            translated = translate(message.content, src_lang, tgt_lang)
+            if translated:
+                target_channel = bot.get_channel(cid)
+                await target_channel.send(f"[{message.author.display_name}] : {translated}")
+    except Exception as e:
+        print(f"❌ on_message 예외: {e}")
+        import traceback
+        traceback.print_exc()
+        os._exit(1)
 
 def run_http_server():
     with TCPServer(("", 8080), SimpleHTTPRequestHandler) as httpd:
         httpd.serve_forever()
-
 
 threading.Thread(target=run_http_server, daemon=True).start()
 bot.run(TOKEN)
