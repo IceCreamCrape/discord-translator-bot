@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 import requests
@@ -125,14 +124,21 @@ async def on_message(message):
             return
 
         src_lang = lang_channels[message.channel.id]
+        sent_to = set()  # ✅ 중복 채널 방지
+
         for cid, tgt_lang in lang_channels.items():
             if cid == message.channel.id:
+                continue
+            if cid in sent_to:
                 continue
 
             translated = translate(message.content, src_lang, tgt_lang)
             if translated:
                 target_channel = bot.get_channel(cid)
-                await target_channel.send(f"[{message.author.display_name}] : {translated}")
+                if target_channel:
+                    await target_channel.send(f"[{message.author.display_name}] : {translated}")
+                    sent_to.add(cid)
+
     except Exception as e:
         print(f"❌ on_message 예외: {e}")
         import traceback
