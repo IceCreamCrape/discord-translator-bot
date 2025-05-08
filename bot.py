@@ -22,10 +22,10 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='/', intents=intents)
 
 lang_channels = {}
-
 DAILY_CHAR_LIMIT = 100000
 usage_today = 0
 usage_date = time.strftime("%Y-%m-%d")
+
 
 def load_lang_channels_from_env():
     mapping = {
@@ -38,6 +38,7 @@ def load_lang_channels_from_env():
         channel_id = os.getenv(env_key)
         if channel_id and channel_id.isdigit():
             lang_channels[int(channel_id)] = lang_code
+
 
 def translate(text, source_lang, target_lang):
     global usage_today, usage_date
@@ -70,6 +71,7 @@ def translate(text, source_lang, target_lang):
         print(f"❌ 번역 요청 예외: {e}")
         return "[번역 실패]"
 
+
 async def health_ping():
     await bot.wait_until_ready()
     channel_id = os.getenv("HEALTH_CHECK_CHANNEL_ID")
@@ -86,7 +88,8 @@ async def health_ping():
             await channel.send(f"✅ 봇 정상 작동 중\n⏱️ {now}")
         except Exception as e:
             print(f"❌ health_ping 예외: {e}")
-        await asyncio.sleep(300)
+        await asyncio.sleep(600)  # 🔁 10분마다
+
 
 def restart_via_hook():
     if DEPLOY_HOOK:
@@ -96,10 +99,12 @@ def restart_via_hook():
         except Exception as e:
             print(f"❌ Deploy Hook 호출 실패: {e}")
 
+
 def auto_restart_via_hook():
     while True:
-        time.sleep(900)  # 15분
+        time.sleep(900)  # 🔁 15분
         restart_via_hook()
+
 
 @bot.event
 async def on_ready():
@@ -115,6 +120,7 @@ async def on_ready():
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             await ch.send(f"✅ 번역봇이 다시 시작되었습니다.\n시각: {now}")
 
+
 @bot.event
 async def on_message(message):
     try:
@@ -124,31 +130,36 @@ async def on_message(message):
             return
 
         src_lang = lang_channels[message.channel.id]
-        sent_to = set()  # ✅ 중복 채널 방지
+        sent_to = set()
 
         for cid, tgt_lang in lang_channels.items():
-            if cid == message.channel.id:
-                continue
-            if cid in sent_to:
+            if cid == message.channel.id or cid in sent_to:
                 continue
 
             translated = translate(message.content, src_lang, tgt_lang)
             if translated:
                 target_channel = bot.get_channel(cid)
                 if target_channel:
-                    await target_channel.send(f"[{message.author.display_name}] : {translated}")
-                    sent_to.add(cid)
+                    try:
+                        await asyncio.sleep(0.5)  # 🕒 전송 속도 제한
+                        await target_channel.send(f"[{message.author.display_name}] : {translated}")
+                        sent_to.add(cid)
+                    except discord.errors.HTTPException as e:
+                        print(f"❌ 전송 실패 (Rate Limit): {e}")
+                        await asyncio.sleep(5)  # 🔁 잠깐 대기 후 계속
 
     except Exception as e:
         print(f"❌ on_message 예외: {e}")
         import traceback
         traceback.print_exc()
 
+
 def run_http_server():
     with TCPServer(("", 8080), SimpleHTTPRequestHandler) as httpd:
         httpd.serve_forever()
 
-# 시작
+
+# 실행
 threading.Thread(target=run_http_server, daemon=True).start()
 threading.Thread(target=auto_restart_via_hook, daemon=True).start()
 bot.run(TOKEN)
