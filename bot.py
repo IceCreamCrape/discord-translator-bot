@@ -10,6 +10,8 @@ from socketserver import TCPServer
 from datetime import datetime
 import threading
 
+from asyncio import Queue
+
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -22,10 +24,11 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='/', intents=intents)
 
 lang_channels = {}
+message_queue = Queue()
+
 DAILY_CHAR_LIMIT = 100000
 usage_today = 0
 usage_date = time.strftime("%Y-%m-%d")
-
 
 def load_lang_channels_from_env():
     mapping = {
@@ -38,7 +41,6 @@ def load_lang_channels_from_env():
         channel_id = os.getenv(env_key)
         if channel_id and channel_id.isdigit():
             lang_channels[int(channel_id)] = lang_code
-
 
 def translate(text, source_lang, target_lang):
     global usage_today, usage_date
@@ -71,7 +73,6 @@ def translate(text, source_lang, target_lang):
         print(f"❌ 번역 요청 예외: {e}")
         return "[번역 실패]"
 
-
 async def health_ping():
     await bot.wait_until_ready()
     channel_id = os.getenv("HEALTH_CHECK_CHANNEL_ID")
@@ -85,11 +86,10 @@ async def health_ping():
     while not bot.is_closed():
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:
-            await channel.send(f"✅ 봇 정상 작동 중\n⏱️ {now}")
+            await message_queue.put((channel, f"✅ 봇 정상 작동 중\n⏱️ {now}"))
         except Exception as e:
             print(f"❌ health_ping 예외: {e}")
-        await asyncio.sleep(600)  # 🔁 10분마다
-
+        await asyncio.sleep(600)
 
 def restart_via_hook():
     if DEPLOY_HOOK:
@@ -99,12 +99,21 @@ def restart_via_hook():
         except Exception as e:
             print(f"❌ Deploy Hook 호출 실패: {e}")
 
-
 def auto_restart_via_hook():
     while True:
-        time.sleep(900)  # 🔁 15분
+        time.sleep(900)
         restart_via_hook()
 
+async def message_sender():
+    await bot.wait_until_ready()
+    while True:
+        channel, content = await message_queue.get()
+        try:
+            await channel.send(content)
+        except discord.HTTPException as e:
+            print(f"❌ 메시지 전송 실패: {e}")
+        await asyncio.sleep(1)
+        message_queue.task_done()
 
 @bot.event
 async def on_ready():
@@ -112,14 +121,14 @@ async def on_ready():
     await bot.tree.sync()
     print(f"✅ 로그인됨: {bot.user}")
     bot.loop.create_task(health_ping())
+    bot.loop.create_task(message_sender())
 
     health_channel_id = os.getenv("HEALTH_CHECK_CHANNEL_ID")
     if health_channel_id and health_channel_id.isdigit():
         ch = bot.get_channel(int(health_channel_id))
         if ch:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            await ch.send(f"✅ 번역봇이 다시 시작되었습니다.\n시각: {now}")
-
+            await message_queue.put((ch, f"✅ 번역봇이 다시 시작되었습니다.\n시각: {now}"))
 
 @bot.event
 async def on_message(message):
@@ -140,26 +149,18 @@ async def on_message(message):
             if translated:
                 target_channel = bot.get_channel(cid)
                 if target_channel:
-                    try:
-                        await asyncio.sleep(0.5)  # 🕒 전송 속도 제한
-                        await target_channel.send(f"[{message.author.display_name}] : {translated}")
-                        sent_to.add(cid)
-                    except discord.errors.HTTPException as e:
-                        print(f"❌ 전송 실패 (Rate Limit): {e}")
-                        await asyncio.sleep(5)  # 🔁 잠깐 대기 후 계속
+                    await message_queue.put((target_channel, f"[{message.author.display_name}] : {translated}"))
+                    sent_to.add(cid)
 
     except Exception as e:
         print(f"❌ on_message 예외: {e}")
         import traceback
         traceback.print_exc()
 
-
 def run_http_server():
     with TCPServer(("", 8080), SimpleHTTPRequestHandler) as httpd:
         httpd.serve_forever()
 
-
-# 실행
 threading.Thread(target=run_http_server, daemon=True).start()
 threading.Thread(target=auto_restart_via_hook, daemon=True).start()
 bot.run(TOKEN)
