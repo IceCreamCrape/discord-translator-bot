@@ -9,7 +9,6 @@ from http.server import SimpleHTTPRequestHandler
 from socketserver import TCPServer
 from datetime import datetime
 import threading
-
 from asyncio import Queue
 
 load_dotenv()
@@ -89,7 +88,7 @@ async def health_ping():
             await message_queue.put((channel, f"✅ 봇 정상 작동 중\n⏱️ {now}"))
         except Exception as e:
             print(f"❌ health_ping 예외: {e}")
-        await asyncio.sleep(600)
+        await asyncio.sleep(600)  # 10분
 
 def restart_via_hook():
     if DEPLOY_HOOK:
@@ -101,7 +100,7 @@ def restart_via_hook():
 
 def auto_restart_via_hook():
     while True:
-        time.sleep(900)
+        time.sleep(900)  # 15분
         restart_via_hook()
 
 async def message_sender():
@@ -109,7 +108,10 @@ async def message_sender():
     while True:
         channel, content = await message_queue.get()
         try:
-            await channel.send(content)
+            if isinstance(content, discord.File):
+                await channel.send(file=content)
+            else:
+                await channel.send(content)
         except discord.HTTPException as e:
             print(f"❌ 메시지 전송 실패: {e}")
         await asyncio.sleep(1)
@@ -145,12 +147,29 @@ async def on_message(message):
             if cid == message.channel.id or cid in sent_to:
                 continue
 
-            translated = translate(message.content, src_lang, tgt_lang)
+            target_channel = bot.get_channel(cid)
+            if not target_channel:
+                continue
+
+            # 텍스트 번역
+            translated = translate(message.content, src_lang, tgt_lang) if message.content else None
+
+            # 이미지 첨부 처리
+            files = []
+            for attachment in message.attachments:
+                if attachment.content_type and attachment.content_type.startswith("image/"):
+                    files.append(await attachment.to_file())
+
             if translated:
-                target_channel = bot.get_channel(cid)
-                if target_channel:
-                    await message_queue.put((target_channel, f"[{message.author.display_name}] : {translated}"))
-                    sent_to.add(cid)
+                await message_queue.put((target_channel, f"[{message.author.display_name}] : {translated}"))
+
+            if files:
+                if not translated:
+                    await message_queue.put((target_channel, f"[{message.author.display_name}] : 사진"))
+                for file in files:
+                    await message_queue.put((target_channel, file))
+
+            sent_to.add(cid)
 
     except Exception as e:
         print(f"❌ on_message 예외: {e}")
@@ -161,6 +180,7 @@ def run_http_server():
     with TCPServer(("", 8080), SimpleHTTPRequestHandler) as httpd:
         httpd.serve_forever()
 
+# 시작
 threading.Thread(target=run_http_server, daemon=True).start()
 threading.Thread(target=auto_restart_via_hook, daemon=True).start()
 bot.run(TOKEN)
